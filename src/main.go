@@ -6,22 +6,20 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/text/encoding/korean"
 )
 
-// func getPages(url) {
-
-// }
+const (
+	baseURL = "https://search.naver.com/search.naver"
+	url     = "https://search.naver.com/search.naver?where=news&query=%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90&sm=tab_opt&sort=0&photo=0&field=0&reporter_article=&pd=3&ds=2020.04.25&de=2020.04.26&docid=&nso=so%3Ar%2Cp%3Afrom20200425to20200426%2Ca%3Aall&mynews=0&refresh_start=0&related=0"
+)
 
 func main() {
-	// url := "https://search.naver.com/search.naver?where=news&sm=tab_jum&query=%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90+IR"
-	baseURL := "https://search.naver.com/search.naver"
-	url := "https://search.naver.com/search.naver?where=news&query=%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90&sm=tab_opt&sort=0&photo=0&field=0&reporter_article=&pd=3&ds=2020.04.25&de=2020.04.26&docid=&nso=so%3Ar%2Cp%3Afrom20200425to20200426%2Ca%3Aall&mynews=0&refresh_start=0&related=0"
-
-	// res, err := http.Get(url)
 
 	client := &http.Client{}
 
@@ -120,23 +118,17 @@ func main() {
 
 		pageReq, pageErr := http.NewRequest("GET", pageURL, nil)
 
-		if pageErr != nil {
-			log.Fatal(pageErr)
-		}
+		logError(pageErr)
 
 		pageRes, pageResErr := pageClient.Do(pageReq)
 
-		if pageResErr != nil {
-			log.Fatal(pageResErr)
-		}
+		logError(pageResErr)
 
 		defer pageRes.Body.Close()
 
 		pageDoc, pageDocErr := goquery.NewDocumentFromReader(pageRes.Body)
 
-		if pageDocErr != nil {
-			log.Fatal(pageDocErr)
-		}
+		logError(pageDocErr)
 
 		pageDoc.Find(".type01 .txt_inline a").Each(func(i int, s *goquery.Selection) {
 			link, _ := s.Attr("href")
@@ -152,31 +144,23 @@ func main() {
 
 		contentReq, contentReqErr := http.NewRequest("GET", link, nil)
 
-		if contentReqErr != nil {
-			log.Fatal(contentReq)
-		}
+		logError(contentReqErr)
 
 		contentRes, contentResErr := contentClient.Do(contentReq)
 
-		if contentResErr != nil {
-			log.Fatal(contentResErr)
-		}
+		logError(contentResErr)
 
 		defer contentRes.Body.Close()
-
-		// utfContentBody, utfContentBodyErr := iconv.NewReader(contentRes.Body, "euc-kr", "utf-8")
-
-		// if utfContentBodyErr != nil {
-		// 	log.Fatal(utfContentBodyErr)
-		// }
 
 		contentDoc, contentDocErr := goquery.NewDocumentFromReader(contentRes.Body)
 
 		fmt.Println(contentDoc)
 
-		if contentDocErr != nil {
-			log.Fatal(contentDocErr)
-		}
+		logError(contentDocErr)
+
+		validFileRegEx := "[:\\\\/%*?:|\"<>]"
+
+		validFileReg, _ := regexp.Compile(validFileRegEx)
 
 		// fmt.Println(contentDoc.Find("#articleTitle").Text())
 		title := contentDoc.Find("#articleTitle").Text()
@@ -184,42 +168,25 @@ func main() {
 		publisher, _ := contentDoc.Find(".press_logo img").Attr("title")
 		content := contentDoc.Find("#articleBodyContents").Text()
 		utf8Title, _ := decodeToKOR(title)
+		utf8Title = validFileReg.ReplaceAllString(utf8Title, "")
 		utf8PressDate, _ := decodeToKOR(pressDate)
 		utf8Pulisher, _ := decodeToKOR(publisher)
 		utf8Content, _ := decodeToKOR(content)
-		fmt.Println(utf8Title)
-		fmt.Println(utf8PressDate)
-		fmt.Println(utf8Pulisher)
-		fmt.Println(utf8Content)
 
-		_, err := os.Stat("C:\\crawling_result\\2020-05-02")
+		_currentDate := time.Now()
+
+		currentDate := _currentDate.Format("2006-01-02")
+
+		_, err := os.Stat("C:\\crawling_result\\" + currentDate)
 
 		if os.IsNotExist(err) {
-			errDir := os.MkdirAll("C:\\crawling_result\\2020-05-02", os.ModeDir)
-			if errDir != nil {
-				log.Fatal(err)
-			}
+			errDir := os.MkdirAll("C:\\crawling_result\\"+currentDate, os.ModeDir)
+			logError(errDir)
 		}
 
-		file, createFileErr := os.Create("C:/crawling_result/2020-05-02/" + utf8Title + ".txt")
-		if createFileErr != nil {
-			log.Fatal(createFileErr)
-		}
+		_err := ioutil.WriteFile("C:/crawling_result/"+currentDate+"/"+utf8Title+"_"+currentDate+".txt", []byte(utf8Title+"\n"+link+"\n"+utf8PressDate+"\n"+utf8Pulisher+"\n"+utf8Content), os.FileMode(644))
 
-		defer file.Close()
-
-		_err := ioutil.WriteFile("C:/crawling_result/2020-05-02/"+utf8Title+".txt", []byte(utf8Title+"\n"+utf8PressDate+"\n"+utf8Pulisher+"\n"+utf8Content), os.FileMode(644))
-
-		if _err != nil {
-			log.Fatal(err)
-		}
-
-		// _, fileContentErr := file.WriteString(utf8Title + "\n" + utf8PressDate + "\n" + utf8Content)
-
-		// if fileContentErr != nil {
-		// 	log.Fatal(fileContentErr)
-		// }
-
+		logError(_err)
 	}
 
 }
@@ -234,4 +201,10 @@ func decodeToKOR(text string) (string, error) {
 	}
 
 	return string(dst[:nDst]), nil
+}
+
+func logError(err error) {
+	if err != nil {
+		log.Fatal(err)
+	}
 }
