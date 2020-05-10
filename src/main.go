@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -16,14 +17,55 @@ import (
 
 const (
 	baseURL = "https://search.naver.com/search.naver"
-	url     = "https://search.naver.com/search.naver?where=news&query=%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90&sm=tab_opt&sort=0&photo=0&field=0&reporter_article=&pd=3&ds=2020.04.25&de=2020.04.26&docid=&nso=so%3Ar%2Cp%3Afrom20200425to20200426%2Ca%3Aall&mynews=0&refresh_start=0&related=0"
+	// url     = "https://search.naver.com/search.naver?where=news&query=%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90&sm=tab_opt&sort=0&photo=0&field=0&reporter_article=&pd=3&ds=2020.04.25&de=2020.04.26&docid=&nso=so%3Ar%2Cp%3Afrom20200425to20200426%2Ca%3Aall&mynews=0&refresh_start=0&related=0"
 )
 
 func main() {
 
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("검색어를 입력해주세요: ")
+	searchWord, _ := reader.ReadString('\n')
+	searchWord = strings.TrimSpace(searchWord)
+	fmt.Println(searchWord)
+
+	fmt.Print("검색 시작날짜 (2020.05.09): ")
+	startSearchDate, _ := reader.ReadString('\n')
+	startSearchDate = strings.TrimSpace(startSearchDate)
+	fmt.Println(startSearchDate)
+
+	fmt.Print("검색 끝날짜 (2020.05.09): ")
+	endSearchDate, _ := reader.ReadString('\n')
+	endSearchDate = strings.TrimSpace(endSearchDate)
+	fmt.Println(endSearchDate)
+
+	// initialUrl := strings.Join(strings.Split("https://search.naver.com/search.naver?where=news&query="+searchWord+"&sm=tab_opt&sort=0&photo=0&field=0&reporter_article=&pd=3&reporter_article=&pd=3&docid=&mynews=0&refresh_start=0&related=0\n", "\n"), "")
+
+	initialUrl := "https://search.naver.com/search.naver?where=news&query=" + searchWord + "&sm=tab_opt&sort=0&photo=0&field=0&reporter_article=&pd=3&reporter_article=&pd=3&docid=&mynews=0&refresh_start=0&related=0"
+
+	if searchWord == "" {
+		fmt.Println("검색어 없음.. 종료")
+	}
+
+	if startSearchDate != "" && endSearchDate != "" {
+		joinStartSearchDate := strings.Join(strings.Split(startSearchDate, "."), "")
+		joinEndSearchDate := strings.Join(strings.Split(endSearchDate, "."), "")
+
+		ds := "&ds=" + startSearchDate
+		de := "&de=" + endSearchDate
+		nso := "&nso=so:r,p:from" + joinStartSearchDate
+		to := "to" + joinEndSearchDate
+		all := ",a:all"
+
+		dateQueryStrArr := []string{ds, de, nso, to, all}
+
+		containDateQuery := strings.Join(dateQueryStrArr, "")
+
+		initialUrl = strings.Join([]string{initialUrl, containDateQuery}, "")
+	}
+
 	client := &http.Client{}
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", initialUrl, nil)
 
 	if err != nil {
 		log.Fatal(err)
