@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -23,7 +24,7 @@ type Article struct {
 	content   string
 }
 
-const (
+var (
 	baseURL = "https://search.naver.com/search.naver"
 	// url     = "https://search.naver.com/search.naver?where=news&query=%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90&sm=tab_opt&sort=0&photo=0&field=0&reporter_article=&pd=3&ds=2020.04.25&de=2020.04.26&docid=&nso=so%3Ar%2Cp%3Afrom20200425to20200426%2Ca%3Aall&mynews=0&refresh_start=0&related=0"
 )
@@ -34,7 +35,8 @@ func main() {
 	fmt.Print("검색어를 입력해주세요: ")
 	searchWord, _ := reader.ReadString('\n')
 	searchWord = strings.TrimSpace(searchWord)
-	fmt.Println(searchWord)
+	splitBySpaceSearchWord := strings.Join(strings.Split(searchWord, " "), "%20")
+	fmt.Println(splitBySpaceSearchWord)
 
 	fmt.Print("검색 시작날짜 (2020.05.09): ")
 	startSearchDate, _ := reader.ReadString('\n')
@@ -48,7 +50,7 @@ func main() {
 
 	// initialUrl := strings.Join(strings.Split("https://search.naver.com/search.naver?where=news&query="+searchWord+"&sm=tab_opt&sort=0&photo=0&field=0&reporter_article=&pd=3&reporter_article=&pd=3&docid=&mynews=0&refresh_start=0&related=0\n", "\n"), "")
 
-	initialUrl := "https://search.naver.com/search.naver?where=news&query=" + searchWord + "&sm=tab_opt&sort=0&photo=0&field=0&reporter_article=&pd=3&reporter_article=&pd=3&docid=&mynews=0&refresh_start=0&related=0"
+	initialUrl := "https://search.naver.com/search.naver?where=news&query=" + splitBySpaceSearchWord + "&sm=tab_opt&sort=0&photo=0&field=0&reporter_article=&pd=3&reporter_article=&pd=3&docid=&mynews=0&refresh_start=0&related=0"
 
 	if searchWord == "" {
 		fmt.Println("검색어 없음.. 종료")
@@ -72,7 +74,6 @@ func main() {
 	}
 
 	client := &http.Client{}
-
 	req, err := http.NewRequest("GET", initialUrl, nil)
 
 	logError(err)
@@ -100,12 +101,15 @@ func main() {
 
 	// lastAnchorText := doc.Find(".paging a").Last().Text()
 
+	no_search_result := false
+
 	idx := 0
 
+	nextLinkBox = append(nextLinkBox, strings.Replace(initialUrl, "https://search.naver.com/search.naver", "", -1))
+	fmt.Println("nextLinkBox", nextLinkBox)
 	for {
-
-		if doc.Find(".paging a").Size() == 0 {
-			fmt.Println("검색결과가 없습니다")
+		if len(doc.Find(".not_found02").Nodes) > 0 {
+			no_search_result = true
 			break
 		}
 
@@ -147,9 +151,14 @@ func main() {
 		idx += 1
 	}
 
+	if no_search_result {
+		log.Fatal("검색결과가 없습니다. 종료합니다")
+	}
+
 	// goRoutine => 위에서 가져온 페이지 중 각 페이지 내에 기사 링크를 가져옴.
 	var nextLinkWg sync.WaitGroup
 	// linkChan := make(chan string)
+
 	for _, link := range nextLinkBox {
 		nextLinkWg.Add(1)
 		go getAllLinkInPage(&linkBox, link, &nextLinkWg)
@@ -174,6 +183,7 @@ func getAllLinkInPage(linkBox *[]string, link string, nextLinkWg *sync.WaitGroup
 
 	pageURL := baseURL + link
 
+	fmt.Println("pageURL ", pageURL)
 	pageClient := &http.Client{}
 
 	pageReq, pageErr := http.NewRequest("GET", pageURL, nil)
@@ -189,9 +199,10 @@ func getAllLinkInPage(linkBox *[]string, link string, nextLinkWg *sync.WaitGroup
 	pageDoc, pageDocErr := goquery.NewDocumentFromReader(pageRes.Body)
 
 	logError(pageDocErr)
-
+	fmt.Println("link.. ", link)
 	pageDoc.Find(".type01 .txt_inline a").Each(func(i int, s *goquery.Selection) {
 		link, _ := s.Attr("href")
+		fmt.Println("link ", link)
 		if link != "#" {
 			*linkBox = append(*linkBox, link)
 			// linkChan <- link
@@ -238,18 +249,23 @@ func getArticleContent(link string, wg *sync.WaitGroup) {
 	utf8Pulisher, _ := decodeToKOR(publisher)
 	utf8Content, _ := decodeToKOR(content)
 
+	// 파일 경로 수정 필요
 	_currentDate := time.Now()
 
 	currentDate := _currentDate.Format("2006-01-02")
 
-	_, err := os.Stat("C:\\crawling_result\\" + currentDate)
+	userDir := userHomeDir()
+	saveDir := userDir + "/crawling_result/" + currentDate
+	fmt.Println("saveDir ", saveDir)
+	_, err := os.Stat(saveDir)
 
 	if os.IsNotExist(err) {
-		errDir := os.MkdirAll("C:\\crawling_result\\"+currentDate, os.ModeDir)
+		errDir := os.MkdirAll(saveDir, os.ModePerm)
 		logError(errDir)
 	}
 
-	_err := ioutil.WriteFile("C:/crawling_result/"+currentDate+"/"+utf8Title+"_"+currentDate+".txt", []byte(utf8Title+"\n"+link+"\n"+utf8PressDate+"\n"+utf8Pulisher+"\n"+utf8Content), os.FileMode(644))
+	resultSave := saveDir + "/" + utf8Title + "_" + currentDate + ".txt"
+	_err := ioutil.WriteFile(resultSave, []byte(utf8Title+"\n"+link+"\n"+utf8PressDate+"\n"+utf8Pulisher+"\n"+utf8Content), os.FileMode(os.ModePerm))
 
 	logError(_err)
 }
@@ -270,4 +286,24 @@ func logError(err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func userHomeDir() string {
+	userOS := runtime.GOOS
+
+	if userOS == "windows" {
+		home := os.Getenv("HOMEDRIVE") + os.Getenv("HOMEPATH")
+		if home == "" {
+			home = os.Getenv("USERPROFILE")
+		}
+		return home
+	}
+
+	if userOS == "linux" {
+		home := os.Getenv("XDG_CONFIG_HOME")
+		if home != "" {
+			return home
+		}
+	}
+	return os.Getenv("HOME")
 }
